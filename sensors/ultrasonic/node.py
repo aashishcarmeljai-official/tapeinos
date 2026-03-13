@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
 """
-ultrasonic_node.py — Tapeinos Ultrasonic Sensor Module
+sensors/ultrasonic/node.py — Tapeinos Ultrasonic Sensor Module
 =======================================================
 Two usage modes:
 
   1. IMPORTED by app.py (normal path):
-       from ultrasonic_node import UltrasonicRunner
+       from sensors.ultrasonic.node import UltrasonicRunner
        runner = UltrasonicRunner(sensor_id='us_1', port='/dev/ttyUSB0')
        runner.start()          # starts serial + ROS2 node
        runner.set_stop_threshold(20.0)   # cm — enables stopping sensor
@@ -13,7 +13,7 @@ Two usage modes:
        runner.stop()           # clean shutdown
 
   2. STANDALONE CLI:
-       python3 ultrasonic_node.py --port /dev/ttyUSB0 [--baudrate 115200]
+       python3 -m sensors.ultrasonic.node --port /dev/ttyUSB0 [--baudrate 115200]
 
 ROS2 topics published:
   /tapeinos/ultrasonic/<sensor_id>/distance   (std_msgs/Float32)

@@ -1,5 +1,5 @@
 """
-sensors_state.py — Tapeinos Sensor Registry
+sensors/state.py — Tapeinos Sensor Registry
 ============================================
 Persists sensor instances to /tmp/tapeinos_sensors.json.
 Each sensor record::

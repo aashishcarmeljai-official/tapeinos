@@ -6,6 +6,7 @@ Tapeinos - ROS2 Web Control Dashboard
 
 import atexit
 import os
+import shlex
 import signal
 import subprocess
 import threading
@@ -19,7 +20,7 @@ from flask import Flask, Response, jsonify, render_template, stream_with_context
 app = Flask(__name__)
 
 # ── Register sensor blueprint ───────────────────────────────────────────────
-from sensor_routes import sensors_bp, init_sensors, shutdown_all_sensors
+from sensors.routes import sensors_bp, init_sensors, shutdown_all_sensors
 app.register_blueprint(sensors_bp)
 
 # ---------------------------------------------------------------------------
@@ -42,9 +43,9 @@ def _ros2_source_prefix() -> str:
 
 def _wrap_cmd(cmd: list[str]) -> list[str]:
     prefix  = _ros2_source_prefix()
-    cmd_str = " ".join(cmd)
+    cmd_str = shlex.join(cmd)
     if prefix:
-        return ["bash", "--login", "-c", f"{prefix} && {cmd_str}"]
+        return ["bash", "--login", "-c", f"{prefix} && exec {cmd_str}"]
     return cmd
 
 
@@ -81,7 +82,7 @@ log_locks:   dict[str, threading.Lock] = {p: threading.Lock()  for p in PANELS}
 # ---------------------------------------------------------------------------
 # REMOVED: _jog_runner, _jog_runner_lock, _jog_executor globals.
 # All jog operations now go through jog_once.get_runner() so that
-# sensor_routes.py (which also calls jog_once.get_runner()) always
+# sensors/routes.py (which also calls jog_once.get_runner()) always
 # reaches the *same* JogRunner instance, ensuring stop-topic subscriptions
 # registered by the ultrasonic sensor are active for every jog command.
 
@@ -153,6 +154,27 @@ def _stream_output(panel: str, proc: subprocess.Popen) -> None:
         _append_log(panel, "[process exited]")
 
 
+def _process_group_alive(pgid: int) -> bool:
+    try:
+        os.killpg(pgid, 0)
+        return True
+    except ProcessLookupError:
+        return False
+    except PermissionError:
+        # Same-user child processes are expected here. If we hit this, assume
+        # the group still exists so shutdown escalates rather than exiting early.
+        return True
+
+
+def _wait_for_group_exit(pgid: int, timeout_s: float) -> bool:
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        if not _process_group_alive(pgid):
+            return True
+        time.sleep(0.1)
+    return not _process_group_alive(pgid)
+
+
 def _start_process(panel: str, cmd: list[str]) -> dict:
     if panel in processes and processes[panel].poll() is None:
         return {"status": "already_running", "panel": panel}
@@ -209,21 +231,25 @@ def _stop_process(panel: str) -> dict:
         _append_log(panel, f"[stopping] SIGINT → pgid {pgid} …")
         os.killpg(pgid, signal.SIGINT)
 
-        for _ in range(50):
-            if proc.poll() is not None:
-                break
-            time.sleep(0.1)
-
-        if proc.poll() is None:
+        if not _wait_for_group_exit(pgid, timeout_s=5.0):
             _append_log(panel, f"[stopping] SIGTERM → pgid {pgid} …")
             os.killpg(pgid, signal.SIGTERM)
-            time.sleep(1)
+            if not _wait_for_group_exit(pgid, timeout_s=2.0):
+                _append_log(panel, f"[stopping] SIGKILL → pgid {pgid} …")
+                os.killpg(pgid, signal.SIGKILL)
+                _wait_for_group_exit(pgid, timeout_s=1.0)
 
-        if proc.poll() is None:
-            _append_log(panel, f"[stopping] SIGKILL → pgid {pgid} …")
-            os.killpg(pgid, signal.SIGKILL)
+        try:
+            proc.wait(timeout=0.2)
+        except Exception:
+            pass
 
         processes.pop(panel, None)
+        if _process_group_alive(pgid):
+            msg = f"[warn] process group {pgid} still alive after shutdown"
+            _append_log(panel, msg)
+            return {"status": "warning", "panel": panel, "message": msg}
+
         _append_log(panel, "[stopped]")
         return {"status": "stopped", "panel": panel}
 
@@ -373,7 +399,7 @@ def start_jog():
     except FileNotFoundError:
         pass
     # Eagerly initialise the singleton so it's ready before the first command.
-    # This is the same runner that sensor_routes.py uses, so stop-topic
+    # This is the same runner that sensors/routes.py uses, so stop-topic
     # subscriptions registered by ultrasonic sensors will already be active.
     runner = _get_jog_runner()
     if runner is None:

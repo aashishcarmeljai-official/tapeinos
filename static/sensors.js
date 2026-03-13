@@ -232,7 +232,7 @@ function renderSensorCard(sensor) {
     `${sensor.name || sensor.type} — bash`;
   card.querySelector(".sensor-terminal__cmd").textContent =
     sensor.type === "ultrasonic"
-      ? `ultrasonic_node --port ${sensor.port}`
+      ? `python3 -m sensors.ultrasonic.node --port ${sensor.port}`
       : `camera_node --device ${sensor.port}`;
   card.querySelector(".sensor-terminal__body").id = `sensor-term-body-${sid}`;
 

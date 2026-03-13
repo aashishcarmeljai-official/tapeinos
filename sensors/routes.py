@@ -1,9 +1,9 @@
 """
-sensor_routes.py — Tapeinos Sensor API
+sensors/routes.py — Tapeinos Sensor API
 =======================================
 Registered as a Flask Blueprint in app.py::
 
-    from sensor_routes import sensors_bp, init_sensors
+    from sensors.routes import sensors_bp, init_sensors
     app.register_blueprint(sensors_bp)
     init_sensors(app)          # call after app is created — starts auto-reconnect
 
@@ -29,7 +29,7 @@ from typing import Optional
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
-import sensors_state
+from sensors import state as sensors_state
 
 sensors_bp = Blueprint("sensors", __name__)
 
@@ -76,7 +76,7 @@ def _make_runner(record: dict):
     sid         = record["id"]
 
     if sensor_type == "ultrasonic":
-        from ultrasonic_node import UltrasonicRunner
+        from sensors.ultrasonic.node import UltrasonicRunner
         runner = UltrasonicRunner(
             sensor_id = sid,
             port      = record["port"],
@@ -184,7 +184,7 @@ def _unregister_stop_from_jog(sensor_id: str) -> None:
 
 @sensors_bp.route("/sensors/ports")
 def list_ports():
-    from ultrasonic_node import scan_serial_ports
+    from sensors.ultrasonic.node import scan_serial_ports
     return jsonify({"ports": scan_serial_ports()})
 
 
