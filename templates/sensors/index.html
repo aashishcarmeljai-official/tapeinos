@@ -1,0 +1,373 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tapeinos · Sensors</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='sensors.css') }}" />
+</head>
+<body>
+
+{% set active_page = 'sensors' %}
+<div class="layout">
+
+  {% include 'partials/_sidebar.html' %}
+
+  <main class="main">
+
+    <!-- ── TOPBAR ──────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="topbar__left">
+        <h1 class="topbar__title">Sensors</h1>
+        <span class="topbar__subtitle">Live Sensor Feeds</span>
+      </div>
+      <div class="topbar__centre">
+        <div class="topbar__clock" id="clock">00:00:00</div>
+      </div>
+      <div class="topbar__right">
+        <button class="topbar__btn" id="addSensorBtn" onclick="openAddModal()">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          <span class="topbar__btn-label">Add Sensor</span>
+        </button>
+        <button class="theme-toggle" onclick="toggleTheme()" title="Toggle dark / light mode" aria-label="Toggle dark mode">
+          <svg class="theme-toggle__sun" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1"  x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22"  x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1"  y1="12" x2="3"  y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64"  x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-toggle__moon" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ── SENSOR CARDS AREA ────────────────────────────────── -->
+    <section class="sensors-area" id="sensorsArea">
+
+      <!-- Empty state — shown when no sensors added -->
+      <div class="sensors-empty" id="sensorsEmpty">
+        <div class="sensors-empty__icon">
+          <svg width="52" height="52" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="1" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+        </div>
+        <h2 class="sensors-empty__title">No sensors configured</h2>
+        <p class="sensors-empty__desc">Click <strong>Add Sensor</strong> to connect an ultrasonic or camera sensor to your ROS2 system.</p>
+        <button class="sensors-empty__btn" onclick="openAddModal()">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+          </svg>
+          Add First Sensor
+        </button>
+      </div>
+
+      <!-- Sensor cards injected here by JS -->
+      <div class="sensor-cards" id="sensorCards"></div>
+
+    </section>
+
+  </main>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     ADD SENSOR MODAL
+══════════════════════════════════════════════════════════ -->
+<div class="modal-overlay" id="modalOverlay" onclick="closeAddModal()" aria-hidden="true"></div>
+
+<div class="modal" id="addModal" role="dialog" aria-modal="true" aria-label="Add Sensor">
+  <div class="modal__header">
+    <h2 class="modal__title">Add Sensor</h2>
+    <button class="modal__close" onclick="closeAddModal()" aria-label="Close">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+           stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+        <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+      </svg>
+    </button>
+  </div>
+
+  <div class="modal__body">
+
+    <!-- Step 1: Type selection -->
+    <div class="modal-step" id="step-type">
+      <p class="modal__label">Select sensor type</p>
+      <div class="type-grid">
+        <button class="type-card" id="type-ultrasonic" onclick="selectType('ultrasonic')">
+          <div class="type-card__icon type-card__icon--ultrasonic">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/>
+              <circle cx="12" cy="12" r="4"/>
+            </svg>
+          </div>
+          <span class="type-card__name">Ultrasonic</span>
+          <span class="type-card__desc">Arduino / serial</span>
+        </button>
+        <button class="type-card" id="type-camera" onclick="selectType('camera')">
+          <div class="type-card__icon type-card__icon--camera">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"/>
+              <circle cx="12" cy="13" r="4"/>
+            </svg>
+          </div>
+          <span class="type-card__name">Camera</span>
+          <span class="type-card__desc">USB / CSI</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Step 2: Port / device selection (shown after type chosen) -->
+    <div class="modal-step modal-step--hidden" id="step-config">
+
+      <div class="modal__field">
+        <label class="modal__field-label" for="sensorName">Name <span class="modal__field-optional">(optional)</span></label>
+        <input class="modal__input" type="text" id="sensorName" placeholder="e.g. Front Sensor" autocomplete="off" />
+      </div>
+
+      <!-- Port row — for ultrasonic -->
+      <div class="modal__field" id="portField">
+        <label class="modal__field-label">Serial Port</label>
+        <div class="modal__port-row">
+          <select class="modal__select" id="portSelect">
+            <option value="">— scan to populate —</option>
+          </select>
+          <button class="modal__scan-btn" id="scanBtn" onclick="scanPorts()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+            </svg>
+            Scan
+          </button>
+        </div>
+        <div class="modal__field">
+          <label class="modal__field-label">Baud Rate</label>
+          <select class="modal__select" id="baudrateSelect">
+            <option value="9600">9600</option>
+            <option value="57600">57600</option>
+            <option value="115200" selected>115200</option>
+            <option value="230400">230400</option>
+          </select>
+        </div>
+      </div>
+
+      <!-- Camera device row -->
+      <div class="modal__field modal-step--hidden" id="cameraField">
+        <label class="modal__field-label">Camera Device</label>
+        <div class="modal__port-row">
+          <select class="modal__select" id="cameraSelect">
+            <option value="">— scan to populate —</option>
+          </select>
+          <button class="modal__scan-btn" onclick="scanCameras()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+            </svg>
+            Scan
+          </button>
+        </div>
+      </div>
+
+      <p class="modal__scan-hint" id="scanHint"></p>
+    </div>
+
+  </div>
+
+  <div class="modal__footer">
+    <button class="modal__btn modal__btn--ghost" onclick="closeAddModal()">Cancel</button>
+    <button class="modal__btn modal__btn--primary" id="modalConfirmBtn"
+            onclick="confirmAddSensor()" disabled>Add Sensor</button>
+  </div>
+</div>
+
+<!-- ══════════════════════════════════════════════════════════
+     SENSOR CARD TEMPLATE  (cloned by JS)
+══════════════════════════════════════════════════════════ -->
+<template id="sensorCardTemplate">
+  <article class="sensor-card" data-sensor-id="">
+
+    <!-- Card Header -->
+    <div class="sensor-card__header" onclick="toggleCard(this)">
+      <div class="sensor-card__header-left">
+        <div class="sensor-card__icon-wrap"></div>
+        <div class="sensor-card__info">
+          <span class="sensor-card__name"></span>
+          <span class="sensor-card__meta"></span>
+        </div>
+      </div>
+      <div class="sensor-card__header-right">
+        <span class="badge badge--stopped sensor-card__badge"></span>
+        <label class="toggle sensor-card__toggle" onclick="event.stopPropagation()">
+          <input class="toggle__input sensor-card__toggle-input" type="checkbox" />
+          <span class="toggle__track"><span class="toggle__thumb"></span></span>
+        </label>
+        <button class="sensor-card__remove-btn" onclick="removeSensor(event, this)" title="Remove sensor">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="3 6 5 6 21 6"/><path d="M19 6l-1 14H6L5 6"/>
+            <path d="M10 11v6M14 11v6"/><path d="M9 6V4h6v2"/>
+          </svg>
+        </button>
+        <div class="sensor-card__chevron">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="6 9 12 15 18 9"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+
+    <!-- Card Body (expandable) -->
+    <div class="sensor-card__body">
+      <div class="sensor-card__body-inner">
+
+        <!-- Actions panel (left) -->
+        <div class="sensor-card__actions"></div>
+
+        <!-- Terminal (right) -->
+        <div class="sensor-card__terminal-wrap">
+          <div class="terminal sensor-terminal">
+            <div class="terminal__titlebar">
+              <div class="terminal__dots">
+                <span class="terminal__dot terminal__dot--red"></span>
+                <span class="terminal__dot terminal__dot--yellow"></span>
+                <span class="terminal__dot terminal__dot--green"></span>
+              </div>
+              <span class="terminal__wtitle sensor-terminal__title"></span>
+              <div class="terminal__actions">
+                <span class="terminal__pid sensor-terminal__pid"></span>
+                <button class="terminal__refresh sensor-terminal__refresh" title="Reload log">
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                       stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="terminal__shell-line">
+              <span class="terminal__shell-user">ros2@robot</span>
+              <span class="terminal__shell-sep">:</span>
+              <span class="terminal__shell-path">~</span>
+              <span class="terminal__shell-dollar">$</span>
+              <span class="terminal__shell-cmd sensor-terminal__cmd"></span>
+            </div>
+            <div class="terminal__body sensor-terminal__body" role="log" aria-live="polite">
+              <span class="terminal__idle">▸ toggle ON to start sensor…</span>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+  </article>
+</template>
+
+<!-- Ultrasonic actions template -->
+<template id="ultrasonicActionsTemplate">
+  <div class="actions-panel">
+    <h3 class="actions-panel__title">Actions</h3>
+
+    <div class="action-section">
+      <div class="action-section__header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polygon points="7.86 2 16.14 2 22 7.86 22 16.14 16.14 22 7.86 22 2 16.14 2 7.86 7.86 2"/>
+          <line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+        </svg>
+        Stopping Sensor
+      </div>
+      <p class="action-section__desc">Publish a stop signal when distance drops below threshold.</p>
+      <div class="action-section__form">
+        <div class="action-input-row">
+          <input class="action-input" type="number" min="1" max="500"
+                 placeholder="Threshold (cm)" data-action-input="threshold" />
+          <span class="action-input__unit">cm</span>
+        </div>
+        <div class="action-btn-row">
+          <button class="action-btn action-btn--primary" data-action="set_threshold">
+            Set Threshold
+          </button>
+          <button class="action-btn action-btn--ghost" data-action="clear_threshold">
+            Clear
+          </button>
+        </div>
+        <div class="action-status" data-action-status="threshold"></div>
+      </div>
+    </div>
+
+  </div>
+</template>
+
+<!-- Camera actions template -->
+<template id="cameraActionsTemplate">
+  <div class="actions-panel">
+    <h3 class="actions-panel__title">Actions</h3>
+
+    <div class="action-section">
+      <div class="action-section__header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/><path d="M12 2v2m0 16v2M2 12h2m16 0h2"/>
+        </svg>
+        Calibration
+      </div>
+      <div class="action-btn-col">
+        <button class="action-btn action-btn--primary" data-action="get_intrinsic">Get Intrinsic</button>
+        <button class="action-btn action-btn--primary" data-action="get_extrinsic">Get Extrinsic</button>
+        <button class="action-btn action-btn--primary" data-action="get_distortion">Get Distortion</button>
+      </div>
+    </div>
+
+    <div class="action-section">
+      <div class="action-section__header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 15s1-1 4-1 5 2 8 2 4-1 4-1V3s-1 1-4 1-5-2-8-2-4 1-4 1z"/>
+          <line x1="4" y1="22" x2="4" y2="15"/>
+        </svg>
+        Homography
+      </div>
+      <div class="action-btn-col">
+        <button class="action-btn action-btn--primary" data-action="collect_homography">Collect Points</button>
+        <button class="action-btn action-btn--primary" data-action="compute_homography">Compute</button>
+        <button class="action-btn action-btn--primary" data-action="convert_homography">Convert</button>
+      </div>
+    </div>
+
+    <div class="action-section">
+      <div class="action-section__header">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+             stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/>
+        </svg>
+        Tracking
+      </div>
+      <div class="action-btn-col">
+        <button class="action-btn action-btn--running" data-action="track_objects">Track Objects</button>
+      </div>
+    </div>
+
+  </div>
+</template>
+
+<script src="{{ url_for('static', filename='scripts.js') }}"></script>
+<script src="{{ url_for('static', filename='sensors.js') }}"></script>
+</body>
+</html>

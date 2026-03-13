@@ -1,0 +1,461 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Tapeinos · Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}" />
+</head>
+<body>
+
+{% set active_page = 'dashboard' %}
+
+<div class="layout">
+
+  {% include 'partials/_sidebar.html' %}
+
+  <main class="main">
+
+    <!-- ── TOPBAR ─────────────────────────────────────────── -->
+    <header class="topbar">
+      <div class="topbar__left">
+        <h1 class="topbar__title">Dashboard</h1>
+        <span class="topbar__subtitle">Robot Control Panels</span>
+      </div>
+      <div class="topbar__centre">
+        <div class="topbar__clock" id="clock">00:00:00</div>
+      </div>
+      <div class="topbar__right">
+        <button class="topbar__btn" id="termDrawerBtn"
+                onclick="toggleTermDrawer()"
+                title="Toggle global terminal drawer"
+                aria-expanded="false" aria-controls="termDrawer">
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+               stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+          </svg>
+          <span class="topbar__btn-label">Terminals</span>
+        </button>
+        <button class="theme-toggle" id="themeToggle"
+                onclick="toggleTheme()"
+                title="Toggle dark / light mode"
+                aria-label="Toggle dark mode">
+          <svg class="theme-toggle__sun" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="5"/>
+            <line x1="12" y1="1"  x2="12" y2="3"/>
+            <line x1="12" y1="21" x2="12" y2="23"/>
+            <line x1="4.22" y1="4.22"  x2="5.64" y2="5.64"/>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/>
+            <line x1="1"  y1="12" x2="3"  y2="12"/>
+            <line x1="21" y1="12" x2="23" y2="12"/>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/>
+            <line x1="18.36" y1="5.64"  x2="19.78" y2="4.22"/>
+          </svg>
+          <svg class="theme-toggle__moon" width="17" height="17" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- ══════════════════════════════════════════════════════
+         GLOBAL TERMINAL DRAWER
+    ══════════════════════════════════════════════════════════ -->
+    <div class="term-drawer" id="termDrawer" aria-hidden="true">
+      <div class="term-drawer__inner">
+        <div class="term-drawer__header">
+          <span class="term-drawer__title">
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="opacity:.6">
+              <polyline points="4 17 10 11 4 5"/><line x1="12" y1="19" x2="20" y2="19"/>
+            </svg>
+            Global Terminal View
+          </span>
+          <div class="term-drawer__tabs">
+            <button class="term-drawer__tab term-drawer__tab--active" data-target="dt-microros" onclick="switchDrawerTab('microros', this)">MicroROS</button>
+            <button class="term-drawer__tab" data-target="dt-servo"    onclick="switchDrawerTab('servo', this)">Servo</button>
+            <button class="term-drawer__tab" data-target="dt-moveit"   onclick="switchDrawerTab('moveit', this)">MoveIt</button>
+            <button class="term-drawer__tab" data-target="dt-jog"      onclick="switchDrawerTab('jog', this)">Jog</button>
+            <button class="term-drawer__tab term-drawer__tab--all"     onclick="switchDrawerTab('all', this)">All ⊞</button>
+          </div>
+          <button class="term-drawer__close" onclick="toggleTermDrawer()" title="Close drawer" aria-label="Close terminal drawer">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor"
+                 stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+              <line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/>
+            </svg>
+          </button>
+        </div>
+
+        <div class="term-drawer__panes" id="drawerPanes">
+
+          <!-- ── MicroROS terminal ───────────────────────── -->
+          <div class="drawer-term" id="dt-microros">
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots">
+                  <span class="terminal__dot terminal__dot--red"></span>
+                  <span class="terminal__dot terminal__dot--yellow"></span>
+                  <span class="terminal__dot terminal__dot--green"></span>
+                </div>
+                <span class="terminal__wtitle">microros_agent — bash</span>
+                <div class="terminal__actions">
+                  <span class="terminal__pid" id="dpid-microros"></span>
+                  <button class="terminal__refresh" data-panel="microros" onclick="refreshTerminal('microros')" title="Reload terminal">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">ros2 launch moveit_resources_moto_moveit_config yaskawa_hw.launch.py</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-microros" role="log" aria-live="polite">
+                <span class="terminal__idle">▸ toggle ON to start process…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Servo terminal ─────────────────────────── -->
+          <div class="drawer-term" id="dt-servo" style="display:none">
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots">
+                  <span class="terminal__dot terminal__dot--red"></span>
+                  <span class="terminal__dot terminal__dot--yellow"></span>
+                  <span class="terminal__dot terminal__dot--green"></span>
+                </div>
+                <span class="terminal__wtitle">servo_control — bash</span>
+                <div class="terminal__actions">
+                  <span class="terminal__pid" id="dpid-servo"></span>
+                  <button class="terminal__refresh" data-panel="servo" onclick="refreshTerminal('servo')" title="Reload terminal">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">ros2 run cpp_pubsub enable_client</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-servo" role="log" aria-live="polite">
+                <span class="terminal__idle">▸ toggle ON to start process…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── MoveIt terminal ────────────────────────── -->
+          <div class="drawer-term" id="dt-moveit" style="display:none">
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots">
+                  <span class="terminal__dot terminal__dot--red"></span>
+                  <span class="terminal__dot terminal__dot--yellow"></span>
+                  <span class="terminal__dot terminal__dot--green"></span>
+                </div>
+                <span class="terminal__wtitle">moveit_control — bash</span>
+                <div class="terminal__actions">
+                  <span class="terminal__pid" id="dpid-moveit"></span>
+                  <button class="terminal__refresh" data-panel="moveit" onclick="refreshTerminal('moveit')" title="Reload terminal">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">ros2 launch moveit_resources_moto_moveit_config xy_start.launch.py</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-moveit" role="log" aria-live="polite">
+                <span class="terminal__idle">▸ toggle ON to start process…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Jog terminal ───────────────────────────── -->
+          <div class="drawer-term" id="dt-jog" style="display:none">
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots">
+                  <span class="terminal__dot terminal__dot--red"></span>
+                  <span class="terminal__dot terminal__dot--yellow"></span>
+                  <span class="terminal__dot terminal__dot--green"></span>
+                </div>
+                <span class="terminal__wtitle">jog_teleop — bash</span>
+                <div class="terminal__actions">
+                  <span class="terminal__pid" id="dpid-jog"></span>
+                  <button class="terminal__refresh" data-panel="jog" onclick="refreshTerminal('jog')" title="Reload terminal">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                      <polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/>
+                    </svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">ros2 run hello_moveit wasd</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-jog" role="log" aria-live="polite">
+                <span class="terminal__idle">▸ toggle ON to start jogging…</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── All 4 side by side ─────────────────────── -->
+          <div class="drawer-term drawer-term--all" id="dt-all" style="display:none">
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots"><span class="terminal__dot terminal__dot--red"></span><span class="terminal__dot terminal__dot--yellow"></span><span class="terminal__dot terminal__dot--green"></span></div>
+                <span class="terminal__wtitle">microros_agent</span>
+                <div class="terminal__actions">
+                  <button class="terminal__refresh" data-panel="microros" onclick="refreshTerminal('microros')" title="Reload">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">yaskawa_hw.launch.py</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-all-microros" role="log" aria-live="polite"><span class="terminal__idle">▸ waiting…</span></div>
+            </div>
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots"><span class="terminal__dot terminal__dot--red"></span><span class="terminal__dot terminal__dot--yellow"></span><span class="terminal__dot terminal__dot--green"></span></div>
+                <span class="terminal__wtitle">servo_control</span>
+                <div class="terminal__actions">
+                  <button class="terminal__refresh" data-panel="servo" onclick="refreshTerminal('servo')" title="Reload">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">enable_client</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-all-servo" role="log" aria-live="polite"><span class="terminal__idle">▸ waiting…</span></div>
+            </div>
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots"><span class="terminal__dot terminal__dot--red"></span><span class="terminal__dot terminal__dot--yellow"></span><span class="terminal__dot terminal__dot--green"></span></div>
+                <span class="terminal__wtitle">moveit_control</span>
+                <div class="terminal__actions">
+                  <button class="terminal__refresh" data-panel="moveit" onclick="refreshTerminal('moveit')" title="Reload">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">xy_start.launch.py</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-all-moveit" role="log" aria-live="polite"><span class="terminal__idle">▸ waiting…</span></div>
+            </div>
+            <div class="terminal">
+              <div class="terminal__titlebar">
+                <div class="terminal__dots"><span class="terminal__dot terminal__dot--red"></span><span class="terminal__dot terminal__dot--yellow"></span><span class="terminal__dot terminal__dot--green"></span></div>
+                <span class="terminal__wtitle">jog_teleop</span>
+                <div class="terminal__actions">
+                  <button class="terminal__refresh" data-panel="jog" onclick="refreshTerminal('jog')" title="Reload">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 .49-3.43"/></svg>
+                  </button>
+                </div>
+              </div>
+              <div class="terminal__shell-line">
+                <span class="terminal__shell-user">ros2@robot</span><span class="terminal__shell-sep">:</span><span class="terminal__shell-path">~</span><span class="terminal__shell-dollar">$</span>
+                <span class="terminal__shell-cmd">wasd</span>
+              </div>
+              <div class="terminal__body drawer-term__body" id="dterm-body-all-jog" role="log" aria-live="polite"><span class="terminal__idle">▸ waiting…</span></div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div><!-- /termDrawer -->
+
+    <!-- ══════════════════════════════════════
+         CARDS GRID
+         Row 1: 3 equal control cards
+         Row 2: jog card full width
+    ══════════════════════════════════════ -->
+    <section class="cards-grid" aria-label="Control Panels">
+
+      <!-- ── Row 1 ──────────────────────────────────────── -->
+      <div class="cards-row cards-row--top">
+
+        <article class="card" id="card-microros" data-panel="microros">
+          <div class="card__icon-wrap card__icon--microros">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M12 2v2m0 16v2M2 12h2m16 0h2m-3.22-6.78-1.42 1.42M6.64 17.36l-1.42 1.42M17.36 17.36l-1.42-1.42M6.64 6.64 5.22 5.22"/>
+            </svg>
+          </div>
+          <div class="card__body">
+            <h2 class="card__title">MicroROS Agent</h2>
+            <p class="card__desc">yaskawa_hw.launch.py</p>
+            <span class="badge badge--stopped" id="badge-microros">● STOPPED</span>
+          </div>
+          <div class="card__footer">
+            <label class="toggle" aria-label="Toggle MicroROS Agent">
+              <input class="toggle__input" type="checkbox" data-panel="microros"
+                     data-start="/start_microros" data-stop="/stop_microros" />
+              <span class="toggle__track"><span class="toggle__thumb"></span></span>
+            </label>
+            <span class="toggle__label toggle__label--off" id="tlabel-microros">OFF</span>
+          </div>
+        </article>
+
+        <article class="card" id="card-servo" data-panel="servo">
+          <div class="card__icon-wrap card__icon--servo">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 2a10 10 0 1 0 10 10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+          </div>
+          <div class="card__body">
+            <h2 class="card__title">Servo Control</h2>
+            <p class="card__desc">cpp_pubsub enable / disable</p>
+            <span class="badge badge--stopped" id="badge-servo">● STOPPED</span>
+          </div>
+          <div class="card__footer">
+            <label class="toggle" aria-label="Toggle Servo Control">
+              <input class="toggle__input" type="checkbox" data-panel="servo"
+                     data-start="/start_servo" data-stop="/stop_servo" />
+              <span class="toggle__track"><span class="toggle__thumb"></span></span>
+            </label>
+            <span class="toggle__label toggle__label--off" id="tlabel-servo">OFF</span>
+          </div>
+        </article>
+
+        <article class="card" id="card-moveit" data-panel="moveit">
+          <div class="card__icon-wrap card__icon--moveit">
+            <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </div>
+          <div class="card__body">
+            <h2 class="card__title">MoveIt Control</h2>
+            <p class="card__desc">xy_start.launch.py</p>
+            <span class="badge badge--stopped" id="badge-moveit">● STOPPED</span>
+          </div>
+          <div class="card__footer">
+            <label class="toggle" aria-label="Toggle MoveIt Control">
+              <input class="toggle__input" type="checkbox" data-panel="moveit"
+                     data-start="/start_moveit" data-stop="/stop_moveit" />
+              <span class="toggle__track"><span class="toggle__thumb"></span></span>
+            </label>
+            <span class="toggle__label toggle__label--off" id="tlabel-moveit">OFF</span>
+          </div>
+        </article>
+
+      </div><!-- /cards-row--top -->
+
+      <!-- ── Row 2: Jog Card ────────────────────────────── -->
+      <div class="cards-row cards-row--bottom">
+        <article class="card card--jog-wide" id="card-jog" data-panel="jog">
+
+          <!-- Header: Identity & Toggle -->
+          <div class="jog-header">
+            <div class="jog-header__ident">
+              <div class="card__icon-wrap card__icon--jog">
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="1.5"/><path d="M12 2v3M12 19v3M2 12h3M19 12h3"/><path d="M6.34 6.34l2.12 2.12M15.54 15.54l2.12 2.12M6.34 17.66l2.12-2.12M15.54 8.46l2.12-2.12"/></svg>
+              </div>
+              <div class="jog-header__titles">
+                <h2 class="card__title">Jog Control</h2>
+                <span class="badge badge--stopped" id="badge-jog">● STOPPED</span>
+              </div>
+            </div>
+            <div class="jog-header__actions">
+              <span class="toggle__label--off" id="tlabel-jog">OFF</span>
+              <label class="toggle">
+                <input class="toggle__input" type="checkbox" data-panel="jog" data-start="/start_jog" data-stop="/stop_jog" />
+                <span class="toggle__track"><span class="toggle__thumb"></span></span>
+              </label>
+            </div>
+          </div>
+
+          <!-- Horizontal Control Cockpit -->
+          <div class="jog-controls-horizontal">
+
+            <!-- Section 1: Cartesian XYZ -->
+            <div class="jog-section">
+              <span class="jog-section-label">Cartesian (XYZ)</span>
+              <div class="cartesian-pairs">
+                <div class="axis-pair-row">
+                  <span class="axis-id">X</span>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('w')">+ <small>(W)</small></button>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('s')">− <small>(S)</small></button>
+                </div>
+                <div class="axis-pair-row">
+                  <span class="axis-id">Y</span>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('a')">+ <small>(A)</small></button>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('d')">− <small>(D)</small></button>
+                </div>
+                <div class="axis-pair-row">
+                  <span class="axis-id">Z</span>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('r')">+ <small>(R)</small></button>
+                  <button class="jog-btn jog-btn--wide" onclick="sendJogCmd('f')">− <small>(F)</small></button>
+                </div>
+              </div>
+            </div>
+
+            <div class="jog-v-divider"></div>
+
+            <!-- Section 2: Joint Control -->
+            <div class="jog-section">
+              <span class="jog-section-label">Joint Control</span>
+              <div class="joints-horiz-grid">
+                {% set joint_keys = [('1','!'),('2','@'),('3','#'),('4','$'),('5','%'),('6','^')] %}
+                {% for pos, neg in joint_keys %}
+                <div class="joint-item">
+                  <span class="joint-id">J{{loop.index}}</span>
+                  <div class="joint-pair">
+                    <button class="jog-btn jog-btn--small" onclick="sendJogCmd('{{pos}}')">+</button>
+                    <button class="jog-btn jog-btn--small" onclick="sendJogCmd('{{neg}}')">−</button>
+                  </div>
+                </div>
+                {% endfor %}
+              </div>
+            </div>
+
+            <div class="jog-v-divider"></div>
+
+            <!-- Section 3: System Actions -->
+            <div class="jog-section">
+              <span class="jog-section-label">System Actions</span>
+              <div class="actions-horiz-stack">
+                <div class="action-group">
+                  <span class="action-sublabel">Mode</span>
+                  <div class="btn-row">
+                    <button class="jog-btn jog-btn--mode" onclick="sendJogCmd('c')">Cart <small>(C)</small></button>
+                    <button class="jog-btn jog-btn--mode" onclick="sendJogCmd('j')">Joint <small>(J)</small></button>
+                  </div>
+                </div>
+                <div class="action-group">
+                  <span class="action-sublabel">Gripper</span>
+                  <div class="btn-row">
+                    <button class="jog-btn jog-btn--gripper" onclick="sendJogCmd('o')">Open <small>(O)</small></button>
+                    <button class="jog-btn jog-btn--gripper" onclick="sendJogCmd('p')">Close <small>(P)</small></button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+          </div>
+        </article>
+      </div>
+
+    </section>
+  </main>
+</div>
+
+<script src="{{ url_for('static', filename='scripts.js') }}"></script>
+</body>
+</html>

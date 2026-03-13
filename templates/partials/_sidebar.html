@@ -1,0 +1,73 @@
+{# ──────────────────────────────────────────────────────────
+   templates/partials/_sidebar.html
+   Shared sidebar navigation included by every page with:
+     {% include 'partials/_sidebar.html' %}
+   The active nav item is driven by the `active_page` variable
+   set in each parent template, e.g.:
+     {% set active_page = 'dashboard' %}
+────────────────────────────────────────────────────────── #}
+
+<aside class="sidebar">
+
+  <!-- Brand -->
+  <div class="sidebar__brand">
+    <div class="sidebar__logo">
+      <svg width="34" height="34" viewBox="0 0 36 36" fill="none">
+        <polygon points="18,2 32,10 32,26 18,34 4,26 4,10"
+                 stroke="#20A4F3" stroke-width="1.5" fill="rgba(32,164,243,.08)"/>
+        <circle cx="13" cy="15" r="2.2" fill="#20A4F3"/>
+        <circle cx="23" cy="15" r="2.2" fill="#20A4F3"/>
+        <path d="M12 22 Q18 26 24 22"
+              stroke="#20A4F3" stroke-width="1.5" fill="none" stroke-linecap="round"/>
+        <circle cx="18" cy="8" r="1.2" fill="#3083DC"/>
+      </svg>
+    </div>
+    <div class="sidebar__brand-text">
+      <span class="sidebar__app-name">TAPEINOS</span>
+      <span class="sidebar__tagline">ROS2 Control</span>
+    </div>
+  </div>
+
+  <div class="sidebar__divider"></div>
+
+  <!-- Navigation -->
+  <nav class="sidebar__nav" aria-label="Main Navigation">
+    <ul class="sidebar__nav-list">
+
+      <li class="sidebar__nav-item {% if active_page == 'dashboard' %}sidebar__nav-item--active{% endif %}">
+        <a href="/" class="sidebar__nav-link"
+           {% if active_page == 'dashboard' %}aria-current="page"{% endif %}>
+          <svg class="sidebar__nav-icon" width="17" height="17" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <rect x="3"  y="3"  width="7" height="7"/>
+            <rect x="14" y="3"  width="7" height="7"/>
+            <rect x="14" y="14" width="7" height="7"/>
+            <rect x="3"  y="14" width="7" height="7"/>
+          </svg>
+          Dashboard
+        </a>
+      </li>
+
+      <li class="sidebar__nav-item {% if active_page == 'sensors' %}sidebar__nav-item--active{% endif %}">
+        <a href="/sensors" class="sidebar__nav-link"
+           {% if active_page == 'sensors' %}aria-current="page"{% endif %}>
+          <svg class="sidebar__nav-icon" width="17" height="17" viewBox="0 0 24 24"
+               fill="none" stroke="currentColor" stroke-width="2"
+               stroke-linecap="round" stroke-linejoin="round">
+            <path d="M22 12h-4l-3 9L9 3l-3 9H2"/>
+          </svg>
+          Sensors
+        </a>
+      </li>
+
+    </ul>
+  </nav>
+
+  <!-- Footer status indicator -->
+  <div class="sidebar__footer">
+    <div class="sidebar__status-dot" id="globalStatus"></div>
+    <span class="sidebar__status-label">System Online</span>
+  </div>
+
+</aside>
