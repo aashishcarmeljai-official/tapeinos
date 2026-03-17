@@ -5,26 +5,28 @@ Registered as a Flask Blueprint in app.py::
 
     from sensors.routes import sensors_bp, init_sensors
     app.register_blueprint(sensors_bp)
-    init_sensors(app)          # call after app is created — starts auto-reconnect
+    init_sensors(app)
 
 Routes
 ------
-GET  /sensors/ports                   — scan serial ports
-GET  /sensors/cameras                 — scan camera devices
-GET  /sensors/list                    — all persisted sensor records + live status
-POST /sensors/add                     — add a new sensor instance
-POST /sensors/remove/<sensor_id>      — remove sensor instance
-POST /sensors/start/<sensor_id>       — start ROS2 node
-POST /sensors/stop/<sensor_id>        — stop ROS2 node
-POST /sensors/action/<sensor_id>      — perform a sensor action
-GET  /sensors/logs/<sensor_id>        — SSE log stream
+GET  /sensors/ports
+GET  /sensors/cameras
+GET  /sensors/list
+POST /sensors/add
+POST /sensors/remove/<sensor_id>
+POST /sensors/start/<sensor_id>
+POST /sensors/stop/<sensor_id>
+POST /sensors/action/<sensor_id>
+GET  /sensors/logs/<sensor_id>
 """
 
 from __future__ import annotations
 
+import shutil
 import threading
 import time
 from collections import deque
+from pathlib import Path
 from typing import Optional
 
 from flask import Blueprint, Response, jsonify, request, stream_with_context
@@ -32,16 +34,14 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 from sensors import state as sensors_state
 
 sensors_bp = Blueprint("sensors", __name__)
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+RESOURCES_ROOT = PROJECT_ROOT / "resources"
 
-# ---------------------------------------------------------------------------
-# In-memory runner registry  { sensor_id -> UltrasonicRunner | CameraRunner }
-# ---------------------------------------------------------------------------
+# ── Runner registry ───────────────────────────────────────────────────────────
 _runners: dict = {}
-_runners_lock = threading.Lock()
+_runners_lock  = threading.Lock()
 
-# ---------------------------------------------------------------------------
-# Per-sensor log buffers  (same pattern as main panel log_buffers)
-# ---------------------------------------------------------------------------
+# ── Per-sensor SSE log buffers ────────────────────────────────────────────────
 LOG_HISTORY = 200
 _log_buffers: dict[str, deque] = {}
 _log_locks:   dict[str, threading.Lock] = {}
@@ -63,9 +63,7 @@ def _get_log_cb(sensor_id: str):
     return lambda line: _append_sensor_log(sensor_id, line)
 
 
-# ---------------------------------------------------------------------------
-# Runner factory
-# ---------------------------------------------------------------------------
+# ── Runner factory ────────────────────────────────────────────────────────────
 
 def _stop_topic(sensor_id: str) -> str:
     return f"/tapeinos/ultrasonic/{sensor_id}/stop"
@@ -83,27 +81,32 @@ def _make_runner(record: dict):
             baudrate  = record.get("baudrate", 115200),
             log_cb    = _get_log_cb(sid),
         )
-        # Restore threshold if previously set
         if record.get("threshold") is not None:
             runner._pending_threshold = record["threshold"]
         return runner
 
     if sensor_type == "camera":
-        # Camera runner will be added once camera_node.py is implemented
-        raise NotImplementedError("Camera runner not yet implemented")
+        from sensors.camera.camera_node import CameraRunner
+        tracker_params = {
+            "target_z":       record.get("target_z",       0.18),
+            "step_size":      record.get("step_size",       0.05),
+            "place_offset_x": record.get("place_offset_x", 0.08),
+            "place_offset_y": record.get("place_offset_y", 0.08),
+        }
+        return CameraRunner(
+            sensor_id      = sid,
+            camera_index   = record.get("camera_index", record.get("port", 0)),
+            color          = record.get("color", "red"),
+            log_cb         = _get_log_cb(sid),
+            tracker_params = tracker_params,
+        )
 
     raise ValueError(f"Unknown sensor type: {sensor_type}")
 
 
-# ---------------------------------------------------------------------------
-# Auto-reconnect — called once at app startup
-# ---------------------------------------------------------------------------
+# ── Auto-reconnect ────────────────────────────────────────────────────────────
 
 def _auto_reconnect() -> None:
-    """
-    Re-start any sensor that was running when the app last shut down.
-    Runs in a background thread so it doesn't block Flask startup.
-    """
     records = sensors_state.get_all()
     for sid, record in records.items():
         _ensure_log_buffer(sid)
@@ -112,35 +115,30 @@ def _auto_reconnect() -> None:
         _append_sensor_log(sid, "[auto-reconnect] attempting to restart…")
         try:
             runner = _make_runner(record)
-            ok = runner.start()
+            ok     = runner.start()
             if ok:
                 with _runners_lock:
                     _runners[sid] = runner
-                # Restore threshold after start
-                threshold = record.get("threshold")
-                if threshold is not None:
-                    runner.set_stop_threshold(float(threshold))
-                sensors_state.set_running(sid, True)
                 if record["type"] == "ultrasonic":
+                    threshold = record.get("threshold")
+                    if threshold is not None:
+                        runner.set_stop_threshold(float(threshold))
                     _register_stop_with_jog(sid)
+                sensors_state.set_running(sid, True)
                 _append_sensor_log(sid, "[auto-reconnect] ✓ reconnected")
             else:
                 sensors_state.set_running(sid, False)
-                _append_sensor_log(sid, f"[auto-reconnect] ✗ failed: {runner.error}")
+                _append_sensor_log(sid, f"[auto-reconnect] ✗ failed: {getattr(runner, 'error', '')}")
         except Exception as exc:
             sensors_state.set_running(sid, False)
             _append_sensor_log(sid, f"[auto-reconnect] ✗ error: {exc}")
 
 
 def init_sensors(app) -> None:
-    """Call after app.register_blueprint — starts auto-reconnect thread."""
+    RESOURCES_ROOT.mkdir(parents=True, exist_ok=True)
     t = threading.Thread(target=_auto_reconnect, daemon=True, name="sensor-reconnect")
     t.start()
 
-
-# ---------------------------------------------------------------------------
-# Shutdown — called from app.py _shutdown_all
-# ---------------------------------------------------------------------------
 
 def shutdown_all_sensors() -> None:
     with _runners_lock:
@@ -152,9 +150,7 @@ def shutdown_all_sensors() -> None:
         _runners.clear()
 
 
-# ---------------------------------------------------------------------------
-# Stop-guard helpers
-# ---------------------------------------------------------------------------
+# ── Stop-guard helpers ────────────────────────────────────────────────────────
 
 def _register_stop_with_jog(sensor_id: str) -> None:
     try:
@@ -163,7 +159,7 @@ def _register_stop_with_jog(sensor_id: str) -> None:
         if runner:
             topic = _stop_topic(sensor_id)
             runner.register_stop_topic(topic)
-            _append_sensor_log(sensor_id, f"[stop-guard] registered with JogRunner → {topic}")
+            _append_sensor_log(sensor_id, f"[stop-guard] registered → {topic}")
     except Exception as exc:
         _append_sensor_log(sensor_id, f"[warn] could not register stop topic: {exc}")
 
@@ -178,9 +174,7 @@ def _unregister_stop_from_jog(sensor_id: str) -> None:
         pass
 
 
-# ---------------------------------------------------------------------------
-# Routes — Discovery
-# ---------------------------------------------------------------------------
+# ── Discovery ─────────────────────────────────────────────────────────────────
 
 @sensors_bp.route("/sensors/ports")
 def list_ports():
@@ -190,27 +184,11 @@ def list_ports():
 
 @sensors_bp.route("/sensors/cameras")
 def list_cameras():
-    """Scan for available OpenCV camera indices."""
-    available = []
-    try:
-        import cv2
-        for i in range(8):   # check indices 0-7
-            cap = cv2.VideoCapture(i)
-            if cap.isOpened():
-                ret, _ = cap.read()
-                if ret:
-                    available.append({"index": i, "label": f"Camera {i} (/dev/video{i})"})
-                cap.release()
-    except ImportError:
-        return jsonify({"error": "opencv-python not installed", "cameras": []})
-    except Exception as exc:
-        return jsonify({"error": str(exc), "cameras": []})
-    return jsonify({"cameras": available})
+    from sensors.camera.camera_node import scan_cameras
+    return jsonify({"cameras": scan_cameras()})
 
 
-# ---------------------------------------------------------------------------
-# Routes — Sensor CRUD
-# ---------------------------------------------------------------------------
+# ── Sensor CRUD ───────────────────────────────────────────────────────────────
 
 @sensors_bp.route("/sensors/list")
 def list_sensors():
@@ -226,15 +204,16 @@ def list_sensors():
 
 @sensors_bp.route("/sensors/add", methods=["POST"])
 def add_sensor():
-    body = request.get_json(force=True) or {}
+    body        = request.get_json(force=True) or {}
     sensor_type = body.get("type", "").strip()
     name        = body.get("name", "").strip() or sensor_type.title()
     port        = body.get("port", "").strip()
     baudrate    = int(body.get("baudrate", 115200))
+    color       = body.get("color", "red").strip().lower()
 
     if sensor_type not in ("ultrasonic", "camera"):
         return jsonify({"error": f"unknown type: {sensor_type}"}), 400
-    if not port:
+    if not port and port != "0":
         return jsonify({"error": "port is required"}), 400
 
     record = sensors_state.add_sensor(
@@ -242,6 +221,7 @@ def add_sensor():
         name        = name,
         port        = port,
         baudrate    = baudrate,
+        color       = color,
     )
     _ensure_log_buffer(record["id"])
     _append_sensor_log(record["id"], f"[created] {sensor_type} sensor on {port}")
@@ -250,7 +230,10 @@ def add_sensor():
 
 @sensors_bp.route("/sensors/remove/<sensor_id>", methods=["POST"])
 def remove_sensor(sensor_id: str):
-    # Stop runner if active
+    record = sensors_state.get(sensor_id)
+    if not record:
+        return jsonify({"error": "sensor not found"}), 404
+
     with _runners_lock:
         runner = _runners.pop(sensor_id, None)
     if runner:
@@ -259,23 +242,20 @@ def remove_sensor(sensor_id: str):
         except Exception:
             pass
 
-    removed = sensors_state.remove_sensor(sensor_id)
-    if not removed:
-        return jsonify({"error": "sensor not found"}), 404
+    if record.get("type") == "ultrasonic":
+        _unregister_stop_from_jog(sensor_id)
 
-    # Unregister stop topic if it was an ultrasonic sensor
-    rec = sensors_state.get(sensor_id)  # already deleted but we have type from runner
-    _unregister_stop_from_jog(sensor_id)  # safe even if not registered
-    # Clean up log buffer
+    resources_dir = RESOURCES_ROOT / sensor_id
+    if resources_dir.exists():
+        shutil.rmtree(resources_dir, ignore_errors=True)
+
+    sensors_state.remove_sensor(sensor_id)
     _log_buffers.pop(sensor_id, None)
     _log_locks.pop(sensor_id, None)
-
     return jsonify({"status": "removed", "sensor_id": sensor_id})
 
 
-# ---------------------------------------------------------------------------
-# Routes — Start / Stop
-# ---------------------------------------------------------------------------
+# ── Start / Stop ──────────────────────────────────────────────────────────────
 
 @sensors_bp.route("/sensors/start/<sensor_id>", methods=["POST"])
 def start_sensor(sensor_id: str):
@@ -300,17 +280,18 @@ def start_sensor(sensor_id: str):
     if ok:
         with _runners_lock:
             _runners[sensor_id] = runner
-        # Restore threshold
-        threshold = record.get("threshold")
-        if threshold is not None:
-            runner.set_stop_threshold(float(threshold))
-        sensors_state.set_running(sensor_id, True)
-        # Wire stop signal into JogRunner if it exists
+
         if record["type"] == "ultrasonic":
+            threshold = record.get("threshold")
+            if threshold is not None:
+                runner.set_stop_threshold(float(threshold))
             _register_stop_with_jog(sensor_id)
+
+        sensors_state.set_running(sensor_id, True)
         return jsonify({"status": "started", "sensor_id": sensor_id})
     else:
-        return jsonify({"status": "error", "message": runner.error}), 500
+        return jsonify({"status": "error",
+                        "message": getattr(runner, "error", "unknown")}), 500
 
 
 @sensors_bp.route("/sensors/stop/<sensor_id>", methods=["POST"])
@@ -319,9 +300,8 @@ def stop_sensor(sensor_id: str):
         runner = _runners.pop(sensor_id, None)
 
     if runner:
-        # Remove stop-guard from JogRunner before shutting down node
         record = sensors_state.get(sensor_id)
-        if record and record["type"] == "ultrasonic":
+        if record and record.get("type") == "ultrasonic":
             _unregister_stop_from_jog(sensor_id)
         runner.stop()
         sensors_state.set_running(sensor_id, False)
@@ -331,9 +311,7 @@ def stop_sensor(sensor_id: str):
     return jsonify({"status": "not_running", "sensor_id": sensor_id})
 
 
-# ---------------------------------------------------------------------------
-# Routes — Actions
-# ---------------------------------------------------------------------------
+# ── Actions ───────────────────────────────────────────────────────────────────
 
 @sensors_bp.route("/sensors/action/<sensor_id>", methods=["POST"])
 def sensor_action(sensor_id: str):
@@ -347,22 +325,18 @@ def sensor_action(sensor_id: str):
     with _runners_lock:
         runner = _runners.get(sensor_id)
 
-    # ── Ultrasonic actions ───────────────────────────────────────────
+    # ── Ultrasonic ────────────────────────────────────────────────────────────
     if record["type"] == "ultrasonic":
-
         if action == "set_threshold":
             try:
                 threshold = float(body["threshold"])
             except (KeyError, ValueError):
                 return jsonify({"error": "threshold (float) required"}), 400
-
             if runner:
                 runner.set_stop_threshold(threshold)
             sensors_state.set_threshold(sensor_id, threshold)
-            _append_sensor_log(
-                sensor_id,
-                f"[stopping sensor] threshold updated → {threshold:.1f} cm"
-            )
+            _append_sensor_log(sensor_id,
+                f"[stopping sensor] threshold updated → {threshold:.1f} cm")
             return jsonify({"status": "ok", "threshold": threshold})
 
         if action == "clear_threshold":
@@ -373,21 +347,82 @@ def sensor_action(sensor_id: str):
 
         return jsonify({"error": f"unknown ultrasonic action: {action}"}), 400
 
-    # ── Camera actions ───────────────────────────────────────────────
+    # ── Camera ────────────────────────────────────────────────────────────────
     if record["type"] == "camera":
-        # Implemented once camera_node.py is ready
-        return jsonify({"error": "camera actions not yet implemented"}), 501
+
+        # set_color — no runner required, persists immediately
+        if action == "set_color":
+            color = body.get("color", "red").lower()
+            if color not in ("red", "green", "blue", "yellow"):
+                return jsonify({"error": "invalid color. Choose: red, green, blue, yellow"}), 400
+            if runner:
+                runner.set_color(color)
+            sensors_state.set_color(sensor_id, color)
+            _append_sensor_log(sensor_id, f"[config] color → {color}")
+            return jsonify({"status": "ok", "color": color})
+
+        # set_tracker_params — no runner required, persists immediately
+        if action == "set_tracker_params":
+            keys   = ("target_z", "step_size", "place_offset_x", "place_offset_y")
+            params = {}
+            for k in keys:
+                if k in body:
+                    try:
+                        params[k] = float(body[k])
+                    except (TypeError, ValueError):
+                        return jsonify({"error": f"invalid value for {k}"}), 400
+            if runner:
+                runner.run_action("set_tracker_params", params)
+            sensors_state.set_tracker_params(sensor_id, **params)
+            _append_sensor_log(sensor_id, f"[config] tracker params → {params}")
+            return jsonify({"status": "ok", "params": params})
+
+        # All remaining actions require the runner (cam_pub must be ON)
+        if not runner:
+            return jsonify({
+                "error": "Camera sensor not running. Toggle ON first."
+            }), 409
+
+        # track_objects runs in background
+        if action == "track_objects":
+            def _bg():
+                ok, msg = runner.run_action(action, body)
+                _append_sensor_log(sensor_id,
+                    f"[track_objects] {'✓' if ok else '✗'} {msg}")
+            threading.Thread(target=_bg, daemon=True,
+                              name=f"cam-track-{sensor_id}").start()
+            return jsonify({"status": "started", "action": action})
+
+        # Synchronous actions
+        ok, msg = runner.run_action(action, body)
+
+        # Post-action state sync
+        if ok:
+            if action == "compute_homography":
+                sensors_state.update(sensor_id, calibrated=True)
+            if action == "convert_homography":
+                sensors_state.set_homography_ready(sensor_id, True)
+            if action == "collect_homography":
+                # return collected count so JS can update counter
+                status = runner.get_status()
+                return jsonify({
+                    "status":           "ok",
+                    "message":          msg,
+                    "collected_points": status.get("collected_points", 0),
+                })
+
+        if ok:
+            return jsonify({"status": "ok", "message": msg})
+        else:
+            return jsonify({"error": msg}), 500
 
     return jsonify({"error": f"unknown sensor type: {record['type']}"}), 400
 
 
-# ---------------------------------------------------------------------------
-# Routes — SSE log stream
-# ---------------------------------------------------------------------------
+# ── SSE log stream ────────────────────────────────────────────────────────────
 
 def _sse_sensor_log_generator(sensor_id: str):
     _ensure_log_buffer(sensor_id)
-
     with _log_locks[sensor_id]:
         history = list(_log_buffers[sensor_id])
     for line in history:
@@ -398,11 +433,10 @@ def _sse_sensor_log_generator(sensor_id: str):
         time.sleep(0.25)
         with _log_locks[sensor_id]:
             buf = list(_log_buffers[sensor_id])
-        current_len = len(buf)
-        if current_len > last_len:
+        if len(buf) > last_len:
             for line in buf[last_len:]:
                 yield f"data: {line}\n\n"
-            last_len = current_len
+            last_len = len(buf)
         else:
             yield ": ping\n\n"
 

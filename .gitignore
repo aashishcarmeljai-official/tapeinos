@@ -1,2 +1,4 @@
 __pycache__
 bash.source
+resources
+clean_env.json
