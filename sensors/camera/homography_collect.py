@@ -121,16 +121,7 @@ def main():
 
     # Apply undistortion if calibration available
     K_new = D = K = None
-    cal_path = resources_dir / "camera_params.npz"
-    if cal_path.exists():
-        cal      = np.load(str(cal_path))
-        K        = cal["K"]
-        D        = cal["D"]
-        img_size = tuple(cal["img_size"].astype(int))
-        K_new, _ = cv2.getOptimalNewCameraMatrix(K, D, img_size, 1, img_size)
-        print("Undistortion: ON")
-    else:
-        print("Undistortion: OFF (no camera_params.npz)")
+    print("Undistortion: OFF (disabled to match C++ tracker)")
 
     rclpy.init()
     node     = HomographyCollectNode()
